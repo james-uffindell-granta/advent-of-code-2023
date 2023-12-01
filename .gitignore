@@ -1,0 +1,6 @@
+/target
+/input
+**/input.txt
+**/target/**
+**/.vscode/**
+**/.idea/**
