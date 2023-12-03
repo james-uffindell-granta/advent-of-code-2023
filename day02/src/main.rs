@@ -74,6 +74,8 @@ pub fn parse_input(input: &str) -> Vec<Game> {
     for line in input.lines() {
         if let Ok((_, game)) = all_consuming(parse_game)(line).finish() {
             games.push(game);
+        } else {
+            unreachable!();
         }
     }
 

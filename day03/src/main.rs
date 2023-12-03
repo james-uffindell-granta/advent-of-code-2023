@@ -24,8 +24,8 @@ impl Coord {
 }
 
 impl From<(i64, i64)> for Coord {
-    fn from(value: (i64, i64)) -> Self {
-        Coord { x: value.0, y: value.1 }
+    fn from((x, y): (i64, i64)) -> Self {
+        Coord { x, y }
     }
 }
 
@@ -49,11 +49,12 @@ pub fn parse_input(input: &str) -> Schematic {
         let mut current_number = String::new();
         let mut start_location = None;
         for (x, c) in line.chars().enumerate() {
+            let current_coord = (x as i64, y as i64).into();
             if c.is_ascii_digit() {
                 current_number.push(c);
                 if start_location.is_none() {
                     // first digit of a new number
-                    start_location = Some((x as i64, y as i64).into());
+                    start_location = Some(current_coord);
                 }
             } else {
                 if let Some(location) = start_location {
@@ -65,9 +66,9 @@ pub fn parse_input(input: &str) -> Schematic {
 
                 if c != '.' {
                     // found a symbol
-                    symbol_locations.insert((x as i64, y as i64).into());
+                    symbol_locations.insert(current_coord);
                     if c == '*' {
-                        gear_locations.insert((x as i64, y as i64).into());
+                        gear_locations.insert(current_coord);
                     }
                 }
             }
@@ -108,7 +109,7 @@ pub fn part_2(schematic: &Schematic) -> u64 {
 
     gear_numbers.values()
         .filter(|ns| ns.len() == 2)
-        .map(|ns| ns.into_iter()
+        .map(|ns| ns.iter()
             .map(|n| n.parse::<u64>().unwrap())
             .product::<u64>())
         .sum()
