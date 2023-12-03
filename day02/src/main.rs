@@ -1,23 +1,20 @@
 use std::collections::HashMap;
+use nom::{
+    branch::alt,
+    bytes::complete::tag,
+    character::complete as cc,
+    combinator::{all_consuming, map},
+    multi::separated_list1,
+    sequence::{separated_pair, tuple},
+    Finish,
+    IResult,
+};
 
 #[derive(PartialEq, Eq, Hash, Copy, Debug, Clone)]
 pub enum Color {
     Red,
     Green,
     Blue,
-}
-
-impl TryFrom<&str> for Color {
-    type Error = ();
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "red" => Ok(Self::Red),
-            "blue" =>  Ok(Self::Blue),
-            "green" => Ok(Self::Green),
-            _ => Err(()),
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -27,6 +24,10 @@ pub struct Game {
 }
 
 impl Game {
+    pub fn new(number: usize) -> Self {
+        Self { number, max_seen: HashMap::new() }
+    }
+
     pub fn record_play(&mut self, cubes_pulled: &HashMap<Color, usize>){
         for (color, number) in cubes_pulled {
             let seen_so_far = self.max_seen.entry(*color).or_insert(0);
@@ -39,29 +40,41 @@ impl Game {
     }
 }
 
-pub fn parse_play(input: &str) -> HashMap<Color, usize> {
-    let mut cubes_seen = HashMap::new();
+pub fn parse_color(input: &str) -> IResult<&str, Color> {
+    alt((
+        map(tag("red"), |_| Color::Red),
+        map(tag("green"), |_| Color::Green),
+        map(tag("blue"), |_| Color::Blue)))(input)
+}
 
-    let cubes = input.split(',');
-    for cube in cubes {
-        let (number, color) = cube.trim().split_once(' ').unwrap();
-        cubes_seen.insert(color.try_into().unwrap(), number.parse().unwrap());
-    }
+pub fn parse_play(input: &str) -> IResult<&str, HashMap<Color, usize>> {
+    map(
+        separated_list1(
+            tag(", "),
+            separated_pair(cc::u64, tag(" "), parse_color)),
+        |pairs| pairs.into_iter().map(|(n, c)| (c, n as usize)).collect())
+    (input)
+}
 
-    cubes_seen
+pub fn parse_game(input: &str) -> IResult<&str, Game> {
+    let (rest, (_, number, _)) = tuple((tag("Game "), cc::u64, tag(": ")))(input)?;
+    let mut game = Game::new(number as usize);
+
+    let (rest, _) = separated_list1(
+        tag("; "),
+        map(parse_play, |play| {
+            game.record_play(&play);
+        })
+    )(rest)?;
+    Ok((rest, game))
 }
 
 pub fn parse_input(input: &str) -> Vec<Game> {
     let mut games = Vec::new();
     for line in input.lines() {
-        let mut chunks = line.split(':');
-        let number = chunks.next().unwrap().split_whitespace().last().unwrap().parse().unwrap();
-        let mut game = Game { number, max_seen: HashMap::new() };
-        let plays = chunks.next().unwrap().split(';');
-        for play in plays {
-            game.record_play(dbg!(&parse_play(play)));
+        if let Ok((_, game)) = all_consuming(parse_game)(line).finish() {
+            games.push(game);
         }
-        games.push(dbg!(game));
     }
 
     games
