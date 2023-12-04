@@ -40,7 +40,6 @@ pub fn test() {
     assert_eq!(line_to_word_number("4nineeightseven2"), 42);
     assert_eq!(line_to_word_number("zoneight234"), 14);
     assert_eq!(line_to_word_number("7pqrstsixteen"), 76);
-    // these were incorrect first time round
     assert_eq!(line_to_word_number("7fiveeightoneightvs"), 78);
     assert_eq!(line_to_word_number("eightwo"), 82);
 }
