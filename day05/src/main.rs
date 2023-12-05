@@ -65,6 +65,62 @@ impl Mapping {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct RangeSet {
+    ranges: Vec<Range<i64>>,
+}
+
+impl RangeSet {
+    pub fn extend(&mut self, other: &RangeSet) {
+        self.ranges.extend(other.ranges.clone());
+    }
+
+    pub fn transform(&self, mapping: &Mapping) -> (RangeSet, RangeSet) {
+        let mut transformed_ranges = Vec::new();
+        let mut unmapped_ranges = Vec::new();
+        let source_end = mapping.source_start + mapping.length;
+        let adjustment = mapping.destination_start - mapping.source_start;
+        for r in &self.ranges {
+            if r.end <= mapping.source_start || r.start >= source_end {
+                unmapped_ranges.push(r.clone());
+            } else if r.start < mapping.source_start && r.end <= source_end {
+                // r.end must be in the middle
+                unmapped_ranges.push(r.start .. mapping.source_start);
+                transformed_ranges.push(mapping.source_start + adjustment .. r.end + adjustment);
+            } else if r.start < mapping.source_start && r.end > source_end {
+                unmapped_ranges.push(r.start .. mapping.source_start);
+                unmapped_ranges.push(source_end .. r.end);
+                transformed_ranges.push(mapping.source_start + adjustment .. source_end + adjustment);
+            } else if r.end <= source_end {
+                // whole range is mapped
+                transformed_ranges.push(r.start + adjustment .. r.end + adjustment);
+            } else {
+                // start between, end outside
+                unmapped_ranges.push(source_end .. r.end);
+                transformed_ranges.push(r.start + adjustment .. source_end + adjustment);
+            }
+        }
+
+        (RangeSet { ranges: transformed_ranges }, RangeSet { ranges: unmapped_ranges })
+    }
+
+    pub fn transform_all(&self, map: &FullMap) -> RangeSet {
+        let mut transformed_ranges = RangeSet { ranges: vec![] };
+        let mut unmapped_ranges = self.clone();
+
+        for m in &map.mappings {
+            let (transformed, unmapped) = unmapped_ranges.transform(m);
+            transformed_ranges.extend(&transformed);
+            unmapped_ranges = unmapped;
+        }
+
+        // everything else is mapped straight through
+        transformed_ranges.extend(&unmapped_ranges);
+
+        transformed_ranges
+    }
+}
+
 #[derive(Debug)]
 pub struct FullMap {
     mappings: Vec<Mapping>,
@@ -157,6 +213,18 @@ impl Input {
         location_set.lower()
         // soil_set.lower()
     }
+
+    pub fn best_seed_range_locations_local(&self) -> i64 {
+        let seeds = RangeSet { ranges: self.seed_ranges.iter().map(|s| s.start .. s.start + s.length).collect::<Vec<_>>() };
+        let mut result = seeds.transform_all(&self.seed_to_soil);
+        result = result.transform_all(&self.soil_to_fertilizer);
+        result = result.transform_all(&self.fertilizer_to_water);
+        result = result.transform_all(&self.water_to_light);
+        result = result.transform_all(&self.light_to_temperature);
+        result = result.transform_all(&self.temperature_to_humidity);
+        result = result.transform_all(&self.humidity_to_location);
+        result.ranges.iter().map(|r| r.start).min().unwrap()
+    }
 }
 
 pub fn parse_input(input: &str) -> Input {
@@ -193,11 +261,16 @@ pub fn part_2(input: &Input) -> i64 {
     input.best_seed_range_locations()
 }
 
+pub fn part_2b(input: &Input) -> i64 {
+    input.best_seed_range_locations_local()
+}
+
 fn main() {
     let input = include_str!("../input.txt");
     let input = parse_input(input);
     println!("Part 1: {}", part_1(&input));
     println!("Part 2: {}", part_2(&input));
+    println!("Part 2b: {}", part_2b(&input));
 }
 
 #[test]
@@ -239,6 +312,7 @@ humidity-to-location map:
     let input = parse_input(input);
     assert_eq!(part_1(&input), 35);
     assert_eq!(part_2(&input), 46);
+    assert_eq!(part_2b(&input), 46);
 }
 
  
