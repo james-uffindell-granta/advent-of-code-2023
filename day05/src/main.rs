@@ -1,9 +1,8 @@
-use std::{collections::HashMap,
+use std::{
     hash::Hash,
-ops::Range};
+    ops::Range
+};
 use itertools::Itertools;
-use interval::{IntervalSet, ops::Range as _, interval_set::ToIntervalSet};
-use gcollections::ops::{Difference, Join, set::Intersection, Bounded, Union};
 
 // started off with u64 but i safer
 #[derive(PartialEq, Eq, Hash, Copy, Clone, Debug)]
@@ -20,48 +19,6 @@ impl Mapping {
         } else {
             None
         }
-    }
-
-    // returns (new values, mapped portion)
-    pub fn get_mapped_segment(&self, input: IntervalSet<i64>) -> (IntervalSet<i64>, IntervalSet<i64>) {
-        let source_interval = vec![(self.source_start, self.source_start + self.length - 1)].to_interval_set();
-        // let input_interval = vec![(input.start, input.end - 1)].to_interval_set();
-        // everything in the intersection is mapped
-        let intersection = source_interval.intersection(&input);
-        // the way things are mapped: we add d - s to the everything.
-        let mapped_intersection = intersection.clone() + (self.destination_start - self.source_start);
-        (mapped_intersection, intersection)
-    }
-
-    pub fn get_mapped_range(&self, input: IntervalSet<i64>) -> (IntervalSet<i64>, IntervalSet<i64>) {
-        // the mapping says that [s, s + l) maps to [d, d + l)
-        // we have [a, a + x).
-
-        // case 1: input entirely outside this map; nothing to do, return input.
-        // if input.end <= self.source_start || (self.source_start + self.length) <= input.start {
-        //     return (0..0, input);
-        // }
-        
-        // // case 2: input entirely within this map; map everything
-        // if input.start >= self.source_start || input.end <= self.source_start + self.length {
-        //     let input_length = input.end - input.start;
-        //     let mapped_start = self.destination_start + (self.source_start - input.start);
-        //     return (mapped_start..(mapped_start + input_length), 0..0);
-        // }
-
-        // wait don't do this
-
-        let source_interval = vec![(self.source_start, self.source_start + self.length - 1)].to_interval_set();
-        // let input_interval = vec![(input.start, input.end - 1)].to_interval_set();
-        // everything in the intersection is mapped
-        let intersection = source_interval.intersection(&input);
-        // the way things are mapped: we add d - s to the everything.
-        let mapped_intersection = intersection.clone() + (self.destination_start - self.source_start);
-
-        // everything in the rest is left alone
-        let rest = input.difference(&intersection);
-
-        (mapped_intersection, rest)
     }
 }
 
@@ -81,23 +38,15 @@ impl RangeSet {
         let source_end = mapping.source_start + mapping.length;
         let adjustment = mapping.destination_start - mapping.source_start;
         for r in &self.ranges {
-            if r.end <= mapping.source_start || r.start >= source_end {
-                unmapped_ranges.push(r.clone());
-            } else if r.start < mapping.source_start && r.end <= source_end {
-                // r.end must be in the middle
-                unmapped_ranges.push(r.start .. mapping.source_start);
-                transformed_ranges.push(mapping.source_start + adjustment .. r.end + adjustment);
-            } else if r.start < mapping.source_start && r.end > source_end {
-                unmapped_ranges.push(r.start .. mapping.source_start);
-                unmapped_ranges.push(source_end .. r.end);
-                transformed_ranges.push(mapping.source_start + adjustment .. source_end + adjustment);
-            } else if r.end <= source_end {
-                // whole range is mapped
-                transformed_ranges.push(r.start + adjustment .. r.end + adjustment);
-            } else {
-                // start between, end outside
-                unmapped_ranges.push(source_end .. r.end);
-                transformed_ranges.push(r.start + adjustment .. source_end + adjustment);
+            let intersection = r.start.max(mapping.source_start) .. (r.end.min(source_end));
+            if intersection.start < intersection.end {
+                transformed_ranges.push(intersection.start + adjustment .. intersection.end + adjustment);
+            }
+            if r.start < intersection.start {
+                unmapped_ranges.push(r.start .. intersection.start.min(intersection.end));
+            }
+            if r.end > intersection.end {
+                unmapped_ranges.push(intersection.end.max(intersection.start) .. r.end);
             }
         }
 
@@ -135,19 +84,6 @@ impl FullMap {
         }
 
         input
-    }
-    pub fn get_mapped_ranges(&self, range: IntervalSet<i64>) -> IntervalSet<i64> {
-        let mut final_values = vec![].to_interval_set();
-        let mut mapped_portions = vec![].to_interval_set();
-        for m in &self.mappings {
-            let (new_values, mapped_portion) = m.get_mapped_segment(range.clone());
-            final_values = final_values.union(&new_values);
-            mapped_portions = mapped_portions.union(&mapped_portion);
-        }
-
-        let unmapped_portion = range.difference(&mapped_portions);
-
-        final_values.union(&unmapped_portion)
     }
 }
 
@@ -200,21 +136,6 @@ impl Input {
     }
 
     pub fn best_seed_range_locations(&self) -> i64 {
-        let mut seeds = self.seed_ranges.iter().map(|s| (s.start, s.start + s.length - 1)).collect::<Vec<_>>();
-        seeds.sort_by_key(|(s, _)| *s);
-        let seed_set = seeds.to_interval_set();
-        let soil_set = self.seed_to_soil.get_mapped_ranges(seed_set);
-        let fertilizer_set = self.soil_to_fertilizer.get_mapped_ranges(soil_set);
-        let water_set = self.fertilizer_to_water.get_mapped_ranges(fertilizer_set);
-        let light_set = self.water_to_light.get_mapped_ranges(water_set);
-        let temperature_set = self.light_to_temperature.get_mapped_ranges(light_set);
-        let humidity_set = self.temperature_to_humidity.get_mapped_ranges(temperature_set);
-        let location_set = self.humidity_to_location.get_mapped_ranges(humidity_set);
-        location_set.lower()
-        // soil_set.lower()
-    }
-
-    pub fn best_seed_range_locations_local(&self) -> i64 {
         let seeds = RangeSet { ranges: self.seed_ranges.iter().map(|s| s.start .. s.start + s.length).collect::<Vec<_>>() };
         let mut result = seeds.transform_all(&self.seed_to_soil);
         result = result.transform_all(&self.soil_to_fertilizer);
@@ -261,16 +182,11 @@ pub fn part_2(input: &Input) -> i64 {
     input.best_seed_range_locations()
 }
 
-pub fn part_2b(input: &Input) -> i64 {
-    input.best_seed_range_locations_local()
-}
-
 fn main() {
     let input = include_str!("../input.txt");
     let input = parse_input(input);
     println!("Part 1: {}", part_1(&input));
     println!("Part 2: {}", part_2(&input));
-    println!("Part 2b: {}", part_2b(&input));
 }
 
 #[test]
@@ -312,7 +228,6 @@ humidity-to-location map:
     let input = parse_input(input);
     assert_eq!(part_1(&input), 35);
     assert_eq!(part_2(&input), 46);
-    assert_eq!(part_2b(&input), 46);
 }
 
  
