@@ -85,8 +85,7 @@ pub fn parse_input(input: &str) -> Vec<Game> {
 pub fn part_1(games: &[Game]) -> usize {
     let cubes_available = vec![(Color::Red, 12), (Color::Green, 13), (Color::Blue, 14)].into_iter().collect();
     games.iter()
-        .filter(|g| g.possible_with(&cubes_available))
-        .map(|g| g.number)
+        .filter_map(|g| g.possible_with(&cubes_available).then_some(g.number))
         .sum()
 }
 
