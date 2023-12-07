@@ -1,4 +1,4 @@
-use itertools::Itertools;
+use std::collections::HashSet;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub enum Card {
@@ -36,7 +36,7 @@ pub struct Hand(Vec<Card>);
 
 impl Hand {
     pub fn hand_type(&self) -> HandType {
-        let unique_cards = self.0.iter().unique().collect::<Vec<_>>();
+        let unique_cards = self.0.iter().collect::<HashSet<_>>();
         let most_identical_cards = unique_cards.iter().map(|c| self.0.iter().filter(|card| c == card).count()).max().unwrap();
         match (unique_cards.len(), most_identical_cards) {
             // these three cases are uniquely determined by how many unique cards there are
