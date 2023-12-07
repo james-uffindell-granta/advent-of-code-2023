@@ -61,6 +61,7 @@ impl From<&str> for Hand {
 
 impl Ord for Hand {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // first compare hand type, then the list of cards
         self.hand_type().cmp(&other.hand_type()).then(self.0.cmp(&other.0))
     }
 }
@@ -70,6 +71,7 @@ impl PartialOrd for Hand {
         Some(self.cmp(other))
     }
 }
+
 // wrapper that implements joker logic
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub struct JokerHand(Vec<Card>);
@@ -105,12 +107,14 @@ impl JokerHand {
 
 impl From<&Hand> for JokerHand {
     fn from(value: &Hand) -> Self {
+        // convert any Jacks to Jokers
         Self(value.0.iter().map(|c| if c == &Card::Jack { Card::Joker } else { *c }).collect())
     }
 }
 
 impl Ord for JokerHand {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // first compare hand type, then the list of cards
         self.hand_type().cmp(&other.hand_type()).then(self.0.cmp(&other.0))
     }
 }
@@ -122,13 +126,10 @@ impl PartialOrd for JokerHand {
 }
 
 pub fn parse_input(input: &str) -> Vec<(Hand, u64)> {
-    let mut games = Vec::new();
-    for line in input.lines() {
+    input.lines().map(|line| {
         let (hand, bid) = line.split_once(' ').unwrap();
-        games.push((hand.into(), bid.parse().unwrap()));
-    }
-
-    games
+        (hand.into(), bid.parse().unwrap())
+    }).collect()
 }
 
 pub fn part_1(games: &[(Hand, u64)]) -> u64 {
