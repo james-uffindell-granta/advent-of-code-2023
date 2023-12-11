@@ -1,5 +1,5 @@
 use std::collections::{HashMap, VecDeque, HashSet};
-use std::time::Instant;
+use geo::{Contains, Polygon, LineString, point};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Coord {
@@ -292,6 +292,38 @@ pub fn part_2(network: &Network) -> usize {
     coords_inside.len()
 }
 
+pub fn part_2_geo(network: &Network) -> usize {
+    let mut ordered_loop: Vec<_> = network.find_ordered_loop().into_iter().collect();
+    // need this to fill in start
+    let network = network.only_loop();
+    ordered_loop.sort_by_key(|(_, n)| *n);
+    ordered_loop.retain(|(c, _)|
+        matches!(network.pipe_locations.get(c).expect(&format!("Nothing in map for {:?}", c).to_owned()),
+        PipeShape::FPipe | PipeShape::JPipe | PipeShape::SevenPipe | PipeShape::LPipe));
+
+    let segments = ordered_loop.into_iter().map(|(c, _)| (c.x, c.y)).collect::<Vec<_>>();
+
+    let polygon = Polygon::new(
+        LineString::from(segments),
+        vec![]
+    );
+
+
+    let mut coords_inside = HashSet::new();
+    // now we have just the loop to worry about, and we have a way of ordering it.
+    let Coord { x: max_x, y: max_y} = network.max_size;
+    for y in 0..=max_y {
+        for x in 0..=max_x {
+            let point = point!(x: x, y: y);
+            if polygon.contains(&point) {
+                coords_inside.insert(point);
+            }
+        }
+    }
+
+    coords_inside.len()
+}
+
 pub fn parse_input(input: &str) -> Network {
     let mut pipe_locations = HashMap::new();
     let mut start_point = None;
@@ -332,6 +364,7 @@ fn main() {
     let network = parse_input(input);
     println!("Part 1: {}", part_1(&network));
     println!("Part 2: {}", part_2(&network));
+    println!("Part 2 geo: {}", part_2_geo(&network));
 }
 
 #[test]
@@ -422,5 +455,6 @@ L7JLJL-JLJLJL--JLJ.L";
 
     let network = parse_input(input);
     assert_eq!(part_2(&network), 10);
+    dbg!(part_2_geo(&network));
 }
 
