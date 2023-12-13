@@ -32,51 +32,35 @@ impl Pattern {
     }
 
     // finds horizontal lines only (transpose to find the others)
-    pub fn find_symmetries(&self) -> Vec<usize> {
-        let mut potential_symmetries = Vec::new();
-        for (zero_based_line_number, (first, second)) in self.0.iter().tuple_windows().enumerate() {
-            if first == second {
-                potential_symmetries.push(zero_based_line_number);
-            }
-        }
+    pub fn find_symmetry(&self) -> Option<usize> {
+        // every row except the last one could be the start of a symmetry
+        let mut potential_symmetries = (0..self.0.len() - 1).collect::<Vec<_>>();
 
         potential_symmetries.retain(|p| {
             (0 ..= *p).rev().zip(p + 1 .. self.0.len()).all(|(l, r)| self.0[l] == self.0[r])
         });
 
         // don't forget to adjust the indexes (we want to start at 1)
-        potential_symmetries.iter().map(|x| x + 1).collect()
+        // and take the first (only) one
+        potential_symmetries.iter().map(|x| x + 1).next()
     }
 
-    pub fn find_near_symmetries(&self) -> Vec<usize> {
-        let mut potential_near_symmetries = Vec::new();
+    pub fn find_near_symmetry(&self) -> Option<usize> {
+        let mut potential_near_symmetries = (0..self.0.len() - 1).collect::<Vec<_>>();
 
         // have we already fixed a smudge for the symmetry starting at this offset?
         let mut smudge_fixed = HashSet::new();
 
-        // don't track the smudges here - just allow ones that might need them
-        // we'll actually do the smudging in the 'retain' later
-        for (zero_based_line_number, (first, second)) in self.0.iter().tuple_windows().enumerate() {
-            match Self::pair_fixable(first, second) {
-                PairMatchState::Identical | PairMatchState::Fixable =>
-                    { potential_near_symmetries.push(zero_based_line_number); },
-                PairMatchState::TooDifferent => { },
-            }
-        }
-
         potential_near_symmetries.retain(|p| {
             for (l, r) in (0 ..= *p).rev().zip(p + 1 .. self.0.len()) {
                 match Self::pair_fixable(&self.0[l], &self.0[r]) {
-                    PairMatchState::Identical => continue,
+                    PairMatchState::Identical => { },
                     PairMatchState::Fixable => {
-                        // have we already fixed our smudge for this start point?
-                        if smudge_fixed.get(p).is_some() {
+                        // remember we can fix up a row from this start point
+                        // but if we've already used our smudge up, we can't do it again
+                        if !smudge_fixed.insert(*p) {
                             return false;
                         }
-
-                        // otherwise we can use our smudge to fix this pair and carry on
-                        smudge_fixed.insert(*p);
-                        continue
                     },
                     PairMatchState::TooDifferent => return false,
                 }
@@ -89,7 +73,7 @@ impl Pattern {
         potential_near_symmetries.retain(|p| smudge_fixed.contains(p));
 
         // don't forget to adjust the indexes (we want to start at 1)
-        potential_near_symmetries.iter().map(|x| x + 1).collect()        
+        potential_near_symmetries.iter().map(|x| x + 1).next()     
     }
 
     // the pair of rows is fixable if there's only one component that differs
@@ -115,30 +99,22 @@ pub fn parse_input(input: &str) -> Vec<Pattern> {
     result
 }
 
-pub fn solve(patterns: &[Pattern], selector: fn(&Pattern) -> Vec<usize>) -> usize {
-    let mut total = 0;
-    for pattern in patterns {
-        // check for rows first
-        let horizontal_lines = selector(pattern);
-        let vertical_lines = selector(&pattern.transpose());
-        assert!(horizontal_lines.len() + vertical_lines.len() == 1);
-
-        if horizontal_lines.is_empty() {
-            total += vertical_lines[0];
-        } else {
-            total += 100 * horizontal_lines[0];
+pub fn solve(patterns: &[Pattern], selector: fn(&Pattern) -> Option<usize>) -> usize {
+    patterns.iter().map(|p|
+        match (selector(p), selector(&p.transpose())) {
+            (Some(h), None) => 100 * h,
+            (None, Some(v)) => v,
+            _ => unreachable!(),
         }
-    }
-
-    total 
+    ).sum()
 }
 
 pub fn part_1(patterns: &[Pattern]) -> usize {
-    solve(patterns, |p| p.find_symmetries())
+    solve(patterns, Pattern::find_symmetry)
 }
 
 pub fn part_2(patterns: &[Pattern]) -> usize {
-    solve(patterns, |p| p.find_near_symmetries())
+    solve(patterns, Pattern::find_near_symmetry)
 }
 
 fn main() {
@@ -167,11 +143,6 @@ pub fn test() {
 #....#..#";
 
     let patterns = parse_input(input);
-    dbg!(patterns[0].find_symmetries());
-    dbg!(patterns[0].transpose().find_symmetries());
-    dbg!(patterns[1].find_symmetries());
-    dbg!(patterns[1].transpose().find_symmetries());
-
     assert_eq!(part_1(&patterns), 405);
     assert_eq!(part_2(&patterns), 400);
 }
