@@ -1,12 +1,8 @@
-
-use std::collections::{HashMap, HashSet};
-
+use std::collections::HashSet;
 use itertools::Itertools;
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
-pub enum Ground {
-    Ash, Rock,
-}
+pub enum Ground { Ash, Rock, }
 
 impl From<char> for Ground {
     fn from(value: char) -> Self {
@@ -30,11 +26,12 @@ pub struct Pattern(Vec<Vec<Ground>>);
 
 impl Pattern {
     pub fn transpose(&self) -> Pattern {
-        Pattern((0..self.0[0].len())
+        Pattern((0 .. self.0[0].len())
             .map(|n| self.0.iter().map(|v| v[n]).collect())
             .collect())
     }
 
+    // finds horizontal lines only (transpose to find the others)
     pub fn find_symmetries(&self) -> Vec<usize> {
         let mut potential_symmetries = Vec::new();
         for (zero_based_line_number, (first, second)) in self.0.iter().tuple_windows().enumerate() {
@@ -57,14 +54,12 @@ impl Pattern {
         // have we already fixed a smudge for the symmetry starting at this offset?
         let mut smudge_fixed = HashSet::new();
 
+        // don't track the smudges here - just allow ones that might need them
+        // we'll actually do the smudging in the 'retain' later
         for (zero_based_line_number, (first, second)) in self.0.iter().tuple_windows().enumerate() {
             match Self::pair_fixable(first, second) {
-                PairMatchState::Identical => { potential_near_symmetries.push(zero_based_line_number); },
-                PairMatchState::Fixable => {
-                    // don't need to remember we fixed it up here - we'll track that later
-                    potential_near_symmetries.push(zero_based_line_number);
-                    
-                }
+                PairMatchState::Identical | PairMatchState::Fixable =>
+                    { potential_near_symmetries.push(zero_based_line_number); },
                 PairMatchState::TooDifferent => { },
             }
         }
@@ -120,12 +115,12 @@ pub fn parse_input(input: &str) -> Vec<Pattern> {
     result
 }
 
-pub fn part_1(patterns: &[Pattern]) -> usize {
+pub fn solve(patterns: &[Pattern], selector: fn(&Pattern) -> Vec<usize>) -> usize {
     let mut total = 0;
     for pattern in patterns {
         // check for rows first
-        let horizontal_lines = pattern.find_symmetries();
-        let vertical_lines = pattern.transpose().find_symmetries();
+        let horizontal_lines = selector(pattern);
+        let vertical_lines = selector(&pattern.transpose());
         assert!(horizontal_lines.len() + vertical_lines.len() == 1);
 
         if horizontal_lines.is_empty() {
@@ -135,25 +130,15 @@ pub fn part_1(patterns: &[Pattern]) -> usize {
         }
     }
 
-    total
+    total 
+}
+
+pub fn part_1(patterns: &[Pattern]) -> usize {
+    solve(patterns, |p| p.find_symmetries())
 }
 
 pub fn part_2(patterns: &[Pattern]) -> usize {
-    let mut total = 0;
-    for pattern in patterns {
-        // check for rows first
-        let horizontal_lines = pattern.find_near_symmetries();
-        let vertical_lines = pattern.transpose().find_near_symmetries();
-        assert!(horizontal_lines.len() + vertical_lines.len() == 1);
-
-        if horizontal_lines.is_empty() {
-            total += vertical_lines[0];
-        } else {
-            total += 100 * horizontal_lines[0];
-        }
-    }
-
-    total
+    solve(patterns, |p| p.find_near_symmetries())
 }
 
 fn main() {
