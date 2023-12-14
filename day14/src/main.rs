@@ -6,12 +6,6 @@ pub struct Coord {
     y: i64,
 }
 
-impl Coord {
-    // pub fn taxicab_distance_to(&self, other: Coord) -> u64 {
-    //     self.x.abs_diff(other.x) + self.y.abs_diff(other.y)
-    // }
-}
-
 impl From<(i64, i64)> for Coord {
     fn from((x, y): (i64, i64)) -> Self {
         Coord { x, y }
@@ -26,6 +20,8 @@ pub enum Direction {
 #[derive(Debug, Clone)]
 pub struct Input {
     cube_rocks: HashSet<Coord>,
+    cube_rocks_by_x_y: HashMap<i64, BTreeSet<i64>>,
+    cube_rocks_by_y_x: HashMap<i64, BTreeSet<i64>>,
     round_rocks: BTreeSet<Coord>,
     max_size: Coord,
 }
@@ -34,6 +30,9 @@ impl Input {
     pub fn tilt(self, direction: Direction) -> Input {
         // cube rocks don't move, only round rocks do.
         let mut new_round_rocks: BTreeSet<Coord> = BTreeSet::new();
+        let mut new_round_rocks_by_x_y: HashMap<i64, BTreeSet<i64>> = HashMap::new();
+        let mut new_round_rocks_by_y_x: HashMap<i64, BTreeSet<i64>> = HashMap::new();
+
         let Coord { x: max_x, y: max_y} = self.max_size;
         match direction {
             Direction::North => {
@@ -41,13 +40,11 @@ impl Input {
                     for x in 0 ..= max_x {
                         let current_coord = (x, y).into();
                         if self.round_rocks.contains(&current_coord) {
-                            let nearest_cube_rock = self.cube_rocks.iter()
-                                .filter_map(|c| (c.x == x && c.y < y).then_some(c.y))
-                                .max().unwrap_or(-1);
-                            let nearest_new_round_rock = new_round_rocks.iter()
-                                .filter_map(|c| (c.x == x && c.y < y).then_some(c.y))
-                                .max().unwrap_or(-1);
+                            let nearest_cube_rock = *self.cube_rocks_by_x_y.get(&x).and_then(|s| s.range(..y).max()).unwrap_or(&-1);
+                            let nearest_new_round_rock = *new_round_rocks_by_x_y.get(&x).and_then(|s| s.range(..y).max()).unwrap_or(&-1);
+
                             new_round_rocks.insert((x, nearest_cube_rock.max(nearest_new_round_rock) + 1).into());
+                            new_round_rocks_by_x_y.entry(x).or_insert(BTreeSet::new()).insert(nearest_cube_rock.max(nearest_new_round_rock) + 1);
                         }
                     }
                 }
@@ -57,13 +54,12 @@ impl Input {
                     for y in 0 ..= max_y {
                         let current_coord = (x, y).into();
                         if self.round_rocks.contains(&current_coord) {
-                            let nearest_cube_rock = self.cube_rocks.iter()
-                                .filter_map(|c| (c.y == y && c.x < x).then_some(c.x))
-                                .max().unwrap_or(-1);
-                            let nearest_new_round_rock = new_round_rocks.iter()
-                                .filter_map(|c| (c.y == y && c.x < x).then_some(c.x))
-                                .max().unwrap_or(-1);
+                            let nearest_cube_rock = *self.cube_rocks_by_y_x.get(&y).and_then(|s| s.range(..x).max()).unwrap_or(&-1);
+                            let nearest_new_round_rock = *new_round_rocks_by_y_x.get(&y).and_then(|s| s.range(..x).max()).unwrap_or(&-1);
+
                             new_round_rocks.insert((nearest_cube_rock.max(nearest_new_round_rock) + 1, y).into());
+                            new_round_rocks_by_y_x.entry(y).or_insert(BTreeSet::new()).insert(nearest_cube_rock.max(nearest_new_round_rock) + 1);
+
                         }
                     }
                 }
@@ -73,13 +69,11 @@ impl Input {
                     for x in 0 ..= max_x {
                         let current_coord = (x, y).into();
                         if self.round_rocks.contains(&current_coord) {
-                            let nearest_cube_rock = self.cube_rocks.iter()
-                                .filter_map(|c| (c.x == x && c.y > y).then_some(c.y))
-                                .min().unwrap_or(self.max_size.y + 1);
-                            let nearest_new_round_rock = new_round_rocks.iter()
-                                .filter_map(|c| (c.x == x && c.y > y).then_some(c.y))
-                                .min().unwrap_or(self.max_size.y + 1);
+                            let nearest_cube_rock = *self.cube_rocks_by_x_y.get(&x).and_then(|s| s.range(y + 1 ..).min()).unwrap_or(&(self.max_size.y + 1));
+                            let nearest_new_round_rock = *new_round_rocks_by_x_y.get(&x).and_then(|s| s.range(y + 1 ..).min()).unwrap_or(&(self.max_size.y + 1));
+
                             new_round_rocks.insert((x, nearest_cube_rock.min(nearest_new_round_rock) - 1).into());
+                            new_round_rocks_by_x_y.entry(x).or_insert(BTreeSet::new()).insert(nearest_cube_rock.min(nearest_new_round_rock) - 1);
                         }
                     }
                 }
@@ -89,13 +83,11 @@ impl Input {
                     for y in 0 ..= max_y {
                         let current_coord = (x, y).into();
                         if self.round_rocks.contains(&current_coord) {
-                            let nearest_cube_rock = self.cube_rocks.iter()
-                                .filter_map(|c| (c.y == y && c.x > x).then_some(c.x))
-                                .min().unwrap_or(self.max_size.x + 1);
-                            let nearest_new_round_rock = new_round_rocks.iter()
-                                .filter_map(|c| (c.y == y && c.x > x).then_some(c.x))
-                                .min().unwrap_or(self.max_size.x + 1);
+                            let nearest_cube_rock = *self.cube_rocks_by_y_x.get(&y).and_then(|s| s.range(x + 1 ..).min()).unwrap_or(&(self.max_size.x + 1));
+                            let nearest_new_round_rock = *new_round_rocks_by_y_x.get(&y).and_then(|s| s.range(x + 1 ..).min()).unwrap_or(&(self.max_size.x + 1));
+
                             new_round_rocks.insert((nearest_cube_rock.min(nearest_new_round_rock) - 1, y).into());
+                            new_round_rocks_by_y_x.entry(y).or_insert(BTreeSet::new()).insert(nearest_cube_rock.min(nearest_new_round_rock) - 1);
                         }
                     }
                 }
@@ -162,7 +154,14 @@ pub fn parse_input(input: &str) -> Input {
 
     let max_size = max_size.unwrap();
 
-    Input { round_rocks, cube_rocks, max_size }
+    let mut cube_rocks_by_x_y = HashMap::new();
+    let mut cube_rocks_by_y_x = HashMap::new();
+    for c in &cube_rocks {
+        cube_rocks_by_x_y.entry(c.x).or_insert(BTreeSet::new()).insert(c.y);
+        cube_rocks_by_y_x.entry(c.y).or_insert(BTreeSet::new()).insert(c.x);
+    }
+
+    Input { round_rocks, cube_rocks, cube_rocks_by_x_y, cube_rocks_by_y_x, max_size }
 }
 
 pub fn part_1(input: &Input) -> i64 {
@@ -235,12 +234,5 @@ O.#..O.#.#
 #....###..
 #OO..#....";
     let input = parse_input(input);
-    // println!("{}", input);
-    // let cycle_1 = input.cycle();
-    // println!("{}", cycle_1);
-    // let cycle_2 = cycle_1.cycle();
-    // println!("{}", cycle_2);
-    // let cycle_3 = cycle_2.cycle();
-    // println!("{}", cycle_3);
     assert_eq!(part_2(&input), 64);
 }
