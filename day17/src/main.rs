@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, ops::Add};
+use std::{collections::{HashMap, HashSet, BTreeSet}, ops::Add};
 use itertools::Itertools;
 
 #[derive(PartialEq, Eq, Copy, Clone, Hash, Debug, Ord, PartialOrd)]
@@ -41,7 +41,7 @@ impl Add<(i64, i64)> for Coord {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub enum Direction {
     Up, Down, Left, Right,
 }
@@ -62,7 +62,7 @@ impl Direction {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub enum Heading {
     Horizontal, Vertical
 }
@@ -94,9 +94,14 @@ impl City {
         // to a block as normal, we'll calculate "best route to a block that enters it heading in
         // direction D", for all directions that make sense for the block.
         // and consider all blocks in a line of min_run..=max_run to be equally 'neighbours'
+
+        // keep track of which blocks we've finished with, and what our 'best route' numbers are
         let mut visited_blocks = HashSet::new();
-        let mut unvisited_blocks = HashMap::new();
         let mut best_routes = HashMap::new();
+        // keep track of unfinished stuff in two ways: once in a map for easy lookup of current best cost,
+        // and once in a set for easy retrieval of "smallest cost block" to handle next
+        let mut unvisited_blocks = HashMap::new();
+        let mut unvisited_blocks_sorted = BTreeSet::new();
 
         // fill in the unvisited blocks (do we actually need to do this?):
         for coord in self.block_weights.keys() {
@@ -108,11 +113,11 @@ impl City {
         // replace the start point so we know we can get there (with either heading) in 0
         unvisited_blocks.insert((Coord::from((0, 0)), Heading::Horizontal), Some(0));
         unvisited_blocks.insert((Coord::from((0, 0)), Heading::Vertical), Some(0));
+        unvisited_blocks_sorted.insert((0, Coord::from((0, 0)), Heading::Horizontal));
+        unvisited_blocks_sorted.insert((0, Coord::from((0, 0)), Heading::Vertical));
 
-        while let Some(((coord, current_heading), score)) = unvisited_blocks.iter()
-            .filter_map(|(k, v)| v.map(|s| (*k, s)))
-            .sorted_by_cached_key(|(_, s)| *s)
-            .next() {
+        while let Some((score, coord, current_heading)) = unvisited_blocks_sorted.pop_first()
+            {
                 // bail out early condition - we've found the shortest way of getting there with some heading
                 if coord == self.max_size {
                     best_routes.insert((coord, current_heading), score);
@@ -144,10 +149,18 @@ impl City {
                                 let current = unvisited_blocks.get(&(destination, new_heading));
                                 match current {
                                     // we've found a better route
-                                    Some(Some(cost)) if *cost > total_loss_here =>
-                                        { unvisited_blocks.insert((destination, new_heading), Some(total_loss_here)); },
+                                    Some(&Some(cost)) if cost > total_loss_here =>
+                                        {
+                                            unvisited_blocks.insert((destination, new_heading), Some(total_loss_here));
+                                            unvisited_blocks_sorted.remove(&(cost, destination, new_heading));
+                                            unvisited_blocks_sorted.insert((total_loss_here, destination, new_heading));
+
+                                        },
                                     Some(None) => 
-                                        { unvisited_blocks.insert((destination, new_heading), Some(total_loss_here)); },
+                                        {
+                                            unvisited_blocks.insert((destination, new_heading), Some(total_loss_here));
+                                            unvisited_blocks_sorted.insert((total_loss_here, destination, new_heading));
+                                        },
                                     _ => { },
                                 }
                             },
