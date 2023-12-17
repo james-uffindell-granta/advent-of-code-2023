@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, ops::Add, thread::current};
+use std::{collections::{HashMap, HashSet}, ops::Add};
 use itertools::Itertools;
 
 #[derive(PartialEq, Eq, Copy, Clone, Hash, Debug, Ord, PartialOrd)]
@@ -47,10 +47,31 @@ pub enum Direction {
 }
 
 impl Direction {
+    pub fn heading(self) -> Heading {
+        match self {
+            Self::Up | Self::Down  => Heading::Vertical,
+            Self::Left | Self::Right => Heading::Horizontal,
+        }
+    }
+
     pub fn possible_options(self) -> [Self; 2] {
         match self {
             Self::Up | Self::Down  => [Self::Left, Self::Right],
             Self::Left | Self::Right => [Self::Up, Self::Down],
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Heading {
+    Horizontal, Vertical
+}
+
+impl Heading {
+    pub fn possible_directions(self) -> [Direction; 2] {
+        match self {
+            Self::Vertical  => [Direction::Left, Direction::Right],
+            Self::Horizontal => [Direction::Up, Direction::Down],
         }
     }
 }
@@ -66,11 +87,13 @@ impl City {
         c.x >= 0 && c.x <= self.max_size.x && c.y >= 0 && c.y <= self.max_size.y
     }
 
-    pub fn calculate_best_weights(&self, min_run: u64, max_run: u64) -> HashMap<(Coord, Direction), u64> {
-        let all_headings = [Direction::Up, Direction::Down, Direction::Left, Direction::Right];
+    pub fn calculate_best_weights(&self, min_run: u64, max_run: u64) -> HashMap<(Coord, Heading), u64> {
+        let all_headings = [Heading::Horizontal, Heading::Vertical];
+
         // to cope with the "at most three in a line", rather than calculating the best route
         // to a block as normal, we'll calculate "best route to a block that enters it heading in
         // direction D", for all directions that make sense for the block.
+        // and consider all blocks in a line of min_run..=max_run to be equally 'neighbours'
         let mut visited_blocks = HashSet::new();
         let mut unvisited_blocks = HashMap::new();
         let mut best_routes = HashMap::new();
@@ -78,17 +101,13 @@ impl City {
         // fill in the unvisited blocks (do we actually need to do this?):
         for coord in self.block_weights.keys() {
             for heading in all_headings {
-                let potential_previous_location = coord.previous(heading);
-                if self.in_bounds(potential_previous_location) {
-                        unvisited_blocks.insert((*coord, heading), None);
-                    }
+                unvisited_blocks.insert((*coord, heading), None);
             }
         }
 
-        // slight hack: now insert the initial squre (we'll insert both possible start directions,
-        // so that we will then handle both "going down" and "going right")
-        unvisited_blocks.insert(((0, 0).into(), Direction::Right), Some(0));
-        unvisited_blocks.insert(((0, 0).into(), Direction::Down), Some(0));
+        // replace the start point so we know we can get there (with either heading) in 0
+        unvisited_blocks.insert((Coord::from((0, 0)), Heading::Horizontal), Some(0));
+        unvisited_blocks.insert((Coord::from((0, 0)), Heading::Vertical), Some(0));
 
         while let Some(((coord, current_heading), score)) = unvisited_blocks.iter()
             .filter_map(|(k, v)| v.map(|s| (*k, s)))
@@ -108,11 +127,11 @@ impl City {
                 // find the neighbours: this is all blocks within three of our current cell,
                 // except in the direction we came from
                 // (by assumption, we've exhausted that heading for this route)
-                for heading in current_heading.possible_options() {
+                for direction in current_heading.possible_directions() {
                     let mut accumulated_loss_this_heading = 0;
                     let mut destination = coord;
                     for run in 1 ..= max_run {
-                        destination = destination.next(heading);
+                        destination = destination.next(direction);
                         match self.block_weights.get(&destination) {
                             Some(loss) => {
                                 accumulated_loss_this_heading += loss;
@@ -121,13 +140,14 @@ impl City {
                                     // not allowed to stop yet though
                                     continue;
                                 }
-                                let current = unvisited_blocks.get(&(destination, heading));
+                                let new_heading = direction.heading();
+                                let current = unvisited_blocks.get(&(destination, new_heading));
                                 match current {
                                     // we've found a better route
                                     Some(Some(cost)) if *cost > total_loss_here =>
-                                        { unvisited_blocks.insert((destination, heading), Some(total_loss_here)); },
+                                        { unvisited_blocks.insert((destination, new_heading), Some(total_loss_here)); },
                                     Some(None) => 
-                                        { unvisited_blocks.insert((destination, heading), Some(total_loss_here)); },
+                                        { unvisited_blocks.insert((destination, new_heading), Some(total_loss_here)); },
                                     _ => { },
                                 }
                             },
@@ -141,28 +161,12 @@ impl City {
 
                 // mark this as visited and carry on
                 visited_blocks.insert((coord, current_heading));
-                // and also remove it from the unvisited list?
+                // and also remove it from the unvisited list
                 let best_score = unvisited_blocks.remove(&(coord, current_heading)).unwrap();
                 best_routes.insert((coord, current_heading), best_score.unwrap());
             }
 
         best_routes
-    }
-}
-
-
-impl std::fmt::Display for City {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Coord { x: max_x, y: max_y} = self.max_size;
-        for y in 0 ..= max_y {
-            for x in 0 ..= max_x {
-                let current_coord = (x, y).into();
-                write!(f, "{}", self.block_weights.get(&current_coord).unwrap())?;
-            }
-            writeln!(f)?;
-        }
-
-        Ok(())
     }
 }
 
