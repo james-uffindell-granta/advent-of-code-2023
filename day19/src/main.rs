@@ -11,15 +11,14 @@ use nom::{
 };
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct RangeSet {
-    ranges: Vec<RangeInclusive<u64>>,
+pub struct RatingRange {
+    range: Option<RangeInclusive<u64>>,
 }
 
-impl RangeSet {
-    pub fn keep_above(&self, value: u64) -> RangeSet {
-        RangeSet { ranges:
-            self.ranges.iter()
-            .filter_map(|r| {
+impl RatingRange {
+    pub fn keep_above(&self, value: u64) -> RatingRange {
+        RatingRange { range:
+            self.range.as_ref().and_then(|r| {
                 if r.end() < &value {
                     None
                 } else if r.start() > &value {
@@ -27,14 +26,13 @@ impl RangeSet {
                 } else {
                     Some(value ..= *r.end())
                 }
-            }).collect()
+            })
         }
     }
 
-    pub fn keep_below(&self, value: u64) -> RangeSet {
-        RangeSet { ranges:
-            self.ranges.iter()
-            .filter_map(|r| {
+    pub fn keep_below(&self, value: u64) -> RatingRange {
+        RatingRange { range:
+            self.range.as_ref().and_then(|r| {
                 if r.start() > &value {
                     None
                 } else if r.end() < &value {
@@ -42,25 +40,17 @@ impl RangeSet {
                 } else {
                     Some(*r.start() ..= value)
                 }
-            }).collect()
+            })
         }
     }
 
-    // could swap to a hash set if these end up being too big because of dupes
-    // or even extend and mut this
-    pub fn union_with(&self, other: &RangeSet) -> RangeSet {
-        let mut new_ranges = self.ranges.clone();
-        new_ranges.extend(other.ranges.clone());
-        RangeSet { ranges: new_ranges }
-    }
-
     pub fn len(&self) -> u64 {
-        self.ranges.iter().map(|r| {
+        self.range.as_ref().map(|r| {
             // just in case
             assert!(r.end() >= r.start());
             // the ranges include all the valid values
             r.end() - r.start() + 1
-        }).sum()
+        }).unwrap_or(0)
     }
 }
 
@@ -74,17 +64,17 @@ pub enum RatingType {
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ConditionThresholds {
-    valid_ranges: HashMap<RatingType, RangeSet>,
+    valid_ranges: HashMap<RatingType, RatingRange>,
 }
 
 impl ConditionThresholds {
     pub fn all_allowed() -> Self {
         Self {
             valid_ranges: HashMap::from([
-                (RatingType::XtremelyCool, RangeSet { ranges: vec![1 ..= 4000] }),
-                (RatingType::Musical, RangeSet { ranges: vec![1 ..= 4000] }),
-                (RatingType::Aerodynamic, RangeSet { ranges: vec![1 ..= 4000] }),
-                (RatingType::Shiny, RangeSet { ranges: vec![1 ..= 4000] }),
+                (RatingType::XtremelyCool, RatingRange { range: Some(1 ..= 4000) }),
+                (RatingType::Musical, RatingRange { range: Some(1 ..= 4000) }),
+                (RatingType::Aerodynamic, RatingRange { range: Some(1 ..= 4000) }),
+                (RatingType::Shiny, RatingRange { range: Some(1 ..= 4000) }),
             ]),
         }
     }
@@ -101,17 +91,6 @@ impl ConditionThresholds {
         let old_range = self.valid_ranges.get(&rating_type).unwrap();
         new_ranges.insert(rating_type, old_range.keep_below(value));
         Self { valid_ranges: new_ranges }
-    }
-
-    // could swap to a hash set if these end up being too big because of dupes
-    // or even extend and mut this
-    pub fn union_with(&self, other: &ConditionThresholds) -> ConditionThresholds {
-        let mut new_ranges = HashMap::new();
-        for (k, v) in &self.valid_ranges {
-            new_ranges.insert(*k, v.union_with(other.valid_ranges.get(k).unwrap()));
-        }
-
-        ConditionThresholds { valid_ranges: new_ranges }
     }
 
     pub fn number_combinations(&self) -> u64 {
