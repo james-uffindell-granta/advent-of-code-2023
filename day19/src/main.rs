@@ -1,14 +1,11 @@
-
-use std::{collections::{HashMap, HashSet}, ops::RangeInclusive};
-use itertools::Itertools;
+use std::{collections::HashMap, ops::RangeInclusive};
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_while},
-    character::is_alphabetic,
     character::complete as cc,
     combinator::{all_consuming, map},
     multi::separated_list1,
-    sequence::{separated_pair, tuple},
+    sequence::tuple,
     Finish,
     IResult,
 };
@@ -30,7 +27,8 @@ impl RangeSet {
                 } else {
                     Some(value ..= *r.end())
                 }
-            }).collect() }
+            }).collect()
+        }
     }
 
     pub fn keep_below(&self, value: u64) -> RangeSet {
@@ -44,7 +42,8 @@ impl RangeSet {
                 } else {
                     Some(*r.start() ..= value)
                 }
-            }).collect() }
+            }).collect()
+        }
     }
 
     // could swap to a hash set if these end up being too big because of dupes
@@ -90,17 +89,6 @@ impl ConditionThresholds {
         }
     }
 
-    pub fn all_rejected() -> Self {
-        Self {
-            valid_ranges: HashMap::from([
-                (RatingType::XtremelyCool, RangeSet { ranges: vec![] }),
-                (RatingType::Musical, RangeSet { ranges: vec![] }),
-                (RatingType::Aerodynamic, RangeSet { ranges: vec![] }),
-                (RatingType::Shiny, RangeSet { ranges: vec![] }),
-            ]),
-        }
-    }
-
     pub fn keep_above(&self, rating_type: RatingType, value: u64) -> ConditionThresholds {
         let mut new_ranges = self.valid_ranges.clone();
         let old_range = self.valid_ranges.get(&rating_type).unwrap();
@@ -120,7 +108,7 @@ impl ConditionThresholds {
     pub fn union_with(&self, other: &ConditionThresholds) -> ConditionThresholds {
         let mut new_ranges = HashMap::new();
         for (k, v) in &self.valid_ranges {
-            new_ranges.insert(*k, v.union_with(other.valid_ranges.get(&k).unwrap()));
+            new_ranges.insert(*k, v.union_with(other.valid_ranges.get(k).unwrap()));
         }
 
         ConditionThresholds { valid_ranges: new_ranges }
@@ -177,19 +165,6 @@ pub struct Input {
 }
 
 impl Input {
-    // pub fn build_functions(&self) -> HashMap<String, Box<dyn Fn(PartRatings) -> bool>> 
-    // {
-    //     let mut positions = self.rules.iter().enumerate()
-    //         .map(|(index, rule)| (rule.name, index)).collect::<HashMap<_, _>>();
-    //     let mut map = HashMap::new();
-    //     map.insert("A", Box::new(|_| true));
-    //     map.insert("R", Box::new(|_| false));
-
-    //     for rule in self.rules {
-    //         let 
-    //     }
-    // }
-
     pub fn process_part_for_rule(&self, part: PartRatings, rule: &Rule) -> bool {
         if rule.name == "A" {
             return true;
@@ -240,17 +215,11 @@ impl Input {
 
         let mut overall_requirements: Vec<ConditionThresholds> = vec![];
         for step in rule.steps.iter().rev() {
-            // println!("Considering step {:?}, so far requirements are {:?}", step, overall_requirements);
             let previous_requirements = overall_requirements.clone();
             let mut new_requirements: Vec<ConditionThresholds> = vec![];
             let requirements_for_downstream = self.invert_rule(self.rules.get(&step.target_rule).unwrap());
-            // println!("Downstream rule was {}, requirements were {:?}", step.target_rule, requirements_for_downstream);
             match step.condition {
                 Some(cond) => {
-                    // to pass the overall rule at this step, either:
-                    // we pass this condition, and pass the downstream rule
-                    // 'keep above' and 'keep below' work inclusively
-
                     match cond.condition_type {
                         ConditionType::GreaterThan => {
                             for req in requirements_for_downstream {
@@ -260,11 +229,6 @@ impl Input {
                             for req in previous_requirements {
                                 new_requirements.push(req.keep_below(cond.field, cond.threshold));
                             }
-                            // // we pass this condition if field > threshold and we also pass the rule we'll be handed over to
-                            // let this_rule_requirements = requirements_for_downstream.keep_above(cond.field, cond.threshold + 1);
-                            // // we pass the fallback rule if field <= threshold and we also 
-                            // let other_rule_requirements = overall_requirements.keep_below(cond.field, cond.threshold);
-                            // this_rule_requirements.union_with(&other_rule_requirements)
                         },
                         ConditionType::LessThan => {
                             for req in requirements_for_downstream {
@@ -274,80 +238,20 @@ impl Input {
                             for req in previous_requirements {
                                 new_requirements.push(req.keep_above(cond.field, cond.threshold));
                             }
-                            // // we pass this condition if field > threshold and we also pass the rule we'll be handed over to
-                            // let this_rule_requirements = requirements_for_downstream.keep_below(cond.field, cond.threshold - 1);
-                            // // we pass the fallback rule if field <= threshold and we also 
-                            // let other_rule_requirements = overall_requirements.keep_above(cond.field, cond.threshold);
-                            // this_rule_requirements.union_with(&other_rule_requirements)
+
                         }
                     }
-
-                    // println!("Added a requirement: now new requirements are {:?}", new_requirements);
                 },
                 None => {
                     // no condition here: we pass the overall rule now only if we pass this 
                     new_requirements = requirements_for_downstream;
-                    // println!("Replaced requirements: now new requirements are {:?}", new_requirements);
                 },
             }
 
             overall_requirements = new_requirements;
         }
 
-        // for step in rule.steps {
-        //     let pass_this_step = 
-        //     match step.condition {
-        //         Some(cond) => {
-        //             let requirements_for_downstream = self.invert_rule(self.rules.get(&step.target_rule).unwrap());
-        //             let new_requirements = match cond.condition_type {
-        //                 ConditionType::GreaterThan => requirements_for_downstream.keep_above(cond.field, cond.threshold),
-        //                 ConditionType::LessThan => requirements_for_downstream.keep_below(cond.field, cond.threshold),
-        //             };
-
-        //             new_requirements
-
-        //         },
-        //         None => self.invert_rule(self.rules.get(&step.target_rule).unwrap()),
-        //     }
-        //     match step.condition {
-        //         Some(cond) => {
-        //             let requirements_for_downstream = self.invert_rule(self.rules.get(&step.target_rule).unwrap());
-        //             let new_requirements = match cond.condition_type {
-        //                 ConditionType::GreaterThan => requirements_for_downstream.keep_above(cond.field, cond.threshold),
-        //                 ConditionType::LessThan => requirements_for_downstream.keep_below(cond.field, cond.threshold),
-        //             };
-
-        //             new_requirements
-
-        //         },
-        //         None => self.invert_rule(self.rules.get(&step.target_rule).unwrap()),
-        //     }
-        // }
-
-        // rule.steps.iter().map(|s| {
-        //     match s.condition {
-        //         Some(cond) => {
-        //             let requirements_for_downstream = self.invert_rule(self.rules.get(&s.target_rule).unwrap());
-        //             let new_requirements = match cond.condition_type {
-        //                 ConditionType::GreaterThan => requirements_for_downstream.keep_above(cond.field, cond.threshold),
-        //                 ConditionType::LessThan => requirements_for_downstream.keep_below(cond.field, cond.threshold),
-        //             };
-
-        //             new_requirements
-
-        //         },
-        //         None => self.invert_rule(self.rules.get(&s.target_rule).unwrap()),
-        //     }
-        // }).reduce(|acc, e| acc.union_with(&e)).unwrap()
         overall_requirements
-        // this rule is (eg)
-        // if p > value1 then follow rule 1
-        // else if q < value2 then follow rule 2
-        // else if r > value3 then follow rule 3
-        // else follow rule 4
-        // so a part will pass if:
-        // p > value 1 && everything else is valid for rule 1
-
     }
 
     pub fn get_thresholds(&self) -> Vec<ConditionThresholds> {
@@ -468,15 +372,12 @@ pub fn parse_input(input: &str) -> Input {
     Input { rules, parts }
 }
 
-
-
 fn main() {
     let input = include_str!("../input.txt");
     let input = parse_input(input);
     println!("Part 1: {}", part_1(&input));
     println!("Part 2: {}", part_2(&input));
 }
-
 
 #[test]
 pub fn test() {
@@ -499,16 +400,6 @@ hdj{m>838:A,pv}
 {x=2127,m=1623,a=2188,s=1013}";
 
     let input = parse_input(input);
-    // rules:
-    // lnx: everything accepted
-    // pv: rejected if a > 1716, otherwise accepted
-    // hdj: accepted if m > 838, otherwise follow pv
-
-    // in: s < 1351 and everything for px,
-    // or s >= 1351 and everything for qqz
-
-    println!("{}", part_1(&input));
-
-    dbg!(input.invert_rule(input.rules.get("in").unwrap()));
-    dbg!(part_2(&input));
+    assert_eq!(part_1(&input), 19114);
+    assert_eq!(part_2(&input), 167409079868000);
 }
