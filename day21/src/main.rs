@@ -281,7 +281,7 @@ impl Input {
         best_routes
     }
 
-    pub fn calculate_weights_extended(&self, threshold: u64) -> usize {
+    pub fn calculate_weights_extended(&self, threshold: u64) -> HashMap<MetaCoord, HashMap<Coord, u64>> {
         let mut seen_states: HashMap<BTreeMap<Coord, u64>, HashMap<Coord, u64>> = HashMap::new();
         let now = Instant::now();
         let mut num_cells_reachable = 0_usize;
@@ -297,17 +297,8 @@ impl Input {
         let mut unvisited_meta_blocks = HashMap::new();
         let mut unvisited_meta_blocks_sorted = BTreeSet::new();
 
-        // fill in the unvisited blocks (do we actually need to do this?):
-        // for y in 0 ..= self.max_size.y {
-        //     for x in 0 ..= self.max_size.x {
-        //         let c = Coord::from((x, y));
-        //         unvisited_blocks.insert(c, None);
-        //     }
-        // }
-
         let max_grid_dimension = (self.max_size.x + 1).max(self.max_size.y + 1) as u64;
         let max_possible_meta_distance_to_travel = threshold / max_grid_dimension + 1;
-        println!("Going to have to explore {} in each direction", max_possible_meta_distance_to_travel);
         
         let start_meta = MetaCoord((0, 0).into());
         unvisited_meta_blocks.insert(start_meta, Some(0));
@@ -316,12 +307,6 @@ impl Input {
 
         while let Some((score, meta_coord)) = unvisited_meta_blocks_sorted.pop_first()
         {
-            // bail out early condition - we've found the shortest way of getting there with some heading
-            // if coord == self.max_size {
-            //     best_routes.insert((coord, current_heading), score);
-            //     break;
-            // }
-
             // TODO we need to do something here - how do we know if we've gone far enough?
             if score > max_possible_meta_distance_to_travel {
                 // we've checked every meta-coord that would be within the range of travel
@@ -427,37 +412,24 @@ impl Input {
             visited_meta_blocks.insert(meta_coord);
             // and also remove it from the unvisited list
             unvisited_meta_blocks.remove(&meta_coord).unwrap();
-
-            let weights_for_meta_block = meta_block_reachable_cell_counts.remove(&meta_coord).unwrap();
-            let new_cells_reachable = weights_for_meta_block.into_iter()
-                .filter(|(_, w)| w <= &threshold && w % 2 == threshold % 2)
-                .count();
-
-            num_cells_reachable += new_cells_reachable;
-
-            if visited_meta_blocks.len() % 100 == 0 {
-                println!("Visited 100 blocks in {:2?}", now.elapsed());
-            }
-            // println!("{} cells were reachable in {} steps in meta-coord {:?}", new_cells_reachable, threshold, meta_coord);
-            // println!("Remembering that we've handled coord {:?} with score {:?}", coord, best_score);
-            // best_routes.insert(meta_coord, best_score.unwrap());
-            // println!("{} meta blocks visited, {} still to visit", visited_meta_blocks.len(), unvisited_meta_blocks.len());
         }
 
-        num_cells_reachable
+        meta_block_reachable_cell_counts
     }
 }
 
 impl std::fmt::Display for Input {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let weights = self.calculate_weights();
         let Coord { x: max_x, y: max_y} = self.max_size;
         for y in 0 ..= max_y {
             for x in 0 ..= max_x {
                 let current_coord = (x, y).into();
                 if self.rocks.contains(&current_coord) {
-                    write!(f, "#")?;
+                    write!(f, "  # ")?;
                 } else {
-                    write!(f, ".")?;
+                    let weight = weights.get(&current_coord).unwrap();
+                    write!(f, "{: >4} ", weight)?;
                 }
             }
             writeln!(f)?;
@@ -466,7 +438,6 @@ impl std::fmt::Display for Input {
         Ok(())
     }
 }
-
 
 pub fn parse_input(input: &str) -> Input {
     let mut rocks: BTreeSet<Coord> = BTreeSet::new();
@@ -502,11 +473,59 @@ pub fn part_1(input: &Input, distance: u64) -> usize {
         .count()
 }
 
+pub fn part_2(input: &Input) -> usize {
+    // for my input at least it's 131 by 131 and it costs 65 to get to each edge midpoint and 130 to get to each corner regardless of the placement of the blocks
+    // because the perimeter and start row/column have no blocks in
+
+    // the number of steps is 26,501,365 which is 202,300 * 131 + 65
+    // so after we get to the midpoint of a side the furthest we can go is an additional 202,300 grids in that direction (and we can just reach the end of each of those)
+    // so we can reach 202,299 grid spaces fully in each cardinal direction (all squares in those grid with the right parity), plus part of the 202,300th
+
+    // because the grid size is odd, each time we move into an adjacent grid we swap from picking up the 'odd' cells (as in the initial square) to picking up the 'even' cells
+    // there are 202,300^2 'even' grids we reach where we need to include the even squares (= 40,925,290,000)
+    // and 202,299^2 'odd' grids we reach where we need to include the odd squares (= 40,924,885,401)
+
+    // there are then 'inner diagonals', where we can reach everything but an outer corner - there are 202,299 of these in each quadrant.
+    // and 'outer diagonals', where we can reach only one inner corner - there are 202,300 of these in each quadrant.
+    // the four furthest squares on each compass point are each unique and should be fine from this fake version.
+
+    // go two out in each direction to figure out the weightings - this should be enough to get us everything we need, and gives us the right parity on the partial grids on the diagonals.
+    let fake_threshold = 2 * 131 + 65;
+    let weights_of_expanded = input.calculate_weights_extended(fake_threshold);
+
+    let weights = weights_of_expanded.iter().map(|(m, ws)| (m, ws.values().filter(|w| **w <= fake_threshold && *w % 2 == 1).count())).collect::<HashMap<_, _>>();
+
+    // this is how many things can be reached in an 'odd' square
+    let weights_of_center = weights.get(&MetaCoord((0, 0).into())).unwrap();
+    // this is how many things can be reached in an 'even' square any of the four adjacent squares should be fine
+    let weights_of_even_square = weights.get(&MetaCoord((0, 1).into())).unwrap();
+
+    // answer is:
+    (weights_of_center * 202_299 * 202_299)
+    + (weights_of_even_square * 202_300 * 202_300)
+    + weights.get(&MetaCoord((0, 2).into())).unwrap()
+    + weights.get(&MetaCoord((0, -2).into())).unwrap()
+    + weights.get(&MetaCoord((2, 0).into())).unwrap()
+    + weights.get(&MetaCoord((-2, 0).into())).unwrap()
+    + (weights.get(&MetaCoord((-1, -2).into())).unwrap() * 202_300)
+    + (weights.get(&MetaCoord((1, -2).into())).unwrap() * 202_300)
+    + (weights.get(&MetaCoord((1, 2).into())).unwrap() * 202_300)
+    + (weights.get(&MetaCoord((-1, 2).into())).unwrap() * 202_300)
+    + (weights.get(&MetaCoord((-1, 1).into())).unwrap() * 202_299)
+    + (weights.get(&MetaCoord((-1, -1).into())).unwrap() * 202_299)
+    + (weights.get(&MetaCoord((1, 1).into())).unwrap() * 202_299)
+    + (weights.get(&MetaCoord((1, -1).into())).unwrap() * 202_299)
+
+    // so that's 81,850,175,401 complete grids
+    // let total_full_grids_reachable = 81_850_175_401_u64;
+}
+
 fn main() {
     let input = include_str!("../input.txt");
     let input = parse_input(input);
     println!("Part 1: {}", part_1(&input, 64));
-    println!("Part 2: {}", input.calculate_weights_extended(26_501_365));
+    // println!("{}", input);
+    println!("Part 2: {}", part_2(&input));
 }
 
 #[test]
